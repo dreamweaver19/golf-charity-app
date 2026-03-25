@@ -566,24 +566,34 @@ async def get_charity(charity_id: str):
     charity['created_at'] = datetime.fromisoformat(charity['created_at'])
     return CharityResponse(**charity)
 
-@api_router.put("/charities/{charity_id}", response_model=CharityResponse)
-async def update_charity(
-    charity_id: str,
-    charity_data: CharityCreate,
-    current_user: dict = Depends(get_current_admin)
-):
-    result = await db.charities.update_one(
-        {"id": charity_id},
-        {"$set": charity_data.model_dump()}
-    )
+@api_router.get("/charities")
+async def get_charities():
+    try:
+        # 1. Fetch from the correct collection name
+        charities_cursor = db.charities.find() 
+        charities = []
+        
+        for charity in charities_cursor:
+            charity['_id'] = str(charity['_id'])
+            
+            # 2. This is the fix for the "KeyError: created_at"
+            # It only tries to format the date if the field actually exists
+            if 'created_at' in charity and charity['created_at']:
+                try:
+                    charity['created_at'] = datetime.fromisoformat(str(charity['created_at']))
+                except Exception:
+                    charity['created_at'] = None # Default to None if date is weird
+            else:
+                charity['created_at'] = None # Default to None if missing
+                
+            charities.append(charity)
+            
+        return charities
+    except Exception as e:
+        print(f"Error fetching charities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Charity not found")
     
-    charity = await db.charities.find_one({"id": charity_id}, {"_id": 0})
-    charity['created_at'] = datetime.fromisoformat(charity['created_at'])
-    return CharityResponse(**charity)
-
 @api_router.delete("/charities/{charity_id}")
 async def delete_charity(charity_id: str, current_user: dict = Depends(get_current_admin)):
     result = await db.charities.delete_one({"id": charity_id})
