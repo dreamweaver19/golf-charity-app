@@ -548,51 +548,64 @@ async def create_charity(charity_data: CharityCreate, current_user: dict = Depen
 
 @api_router.get("/charities", response_model=List[CharityResponse])
 async def get_charities():
-    charities = await db.charities.find({}, {"_id": 0}).to_list(100)
-    
-    # ✅ This version won't crash if the date is missing
-    for charity in charities:
-        if 'created_at' in charity and charity['created_at']:
-            try:
-                charity['created_at'] = datetime.fromisoformat(charity['created_at'])
-            except (ValueError, TypeError):
-                pass
-@api_router.get("/charities/{charity_id}", response_model=CharityResponse)
-async def get_charity(charity_id: str):
-    charity = await db.charities.find_one({"id": charity_id}, {"_id": 0})
-    if not charity:
-        raise HTTPException(status_code=404, detail="Charity not found")
-    
-    charity['created_at'] = datetime.fromisoformat(charity['created_at'])
-    return CharityResponse(**charity)
-
-@api_router.get("/charities")
-async def get_charities():
     try:
-        # 1. Fetch from the correct collection name
-        charities_cursor = db.charities.find() 
-        charities = []
+        # 1. Fetch from collection and await the list conversion (crucial for Motor)
+        # We fetch all fields including _id to convert it safely
+        cursor = db.charities.find() 
+        charities_data = await cursor.to_list(length=100) 
         
-        for charity in charities_cursor:
-            charity['_id'] = str(charity['_id'])
+        charities_list = []
+        
+        for charity in charities_data:
+            # 2. Handle MongoDB's _id (convert ObjectId to string)
+            # If your CharityResponse model expects 'id', map it here
+            if "_id" in charity:
+                charity["id"] = str(charity["_id"])
             
-            # 2. This is the fix for the "KeyError: created_at"
-            # It only tries to format the date if the field actually exists
+            # 3. Safe date handling for 'created_at'
             if 'created_at' in charity and charity['created_at']:
                 try:
-                    charity['created_at'] = datetime.fromisoformat(str(charity['created_at']))
-                except Exception:
-                    charity['created_at'] = None # Default to None if date is weird
+                    # If it's already a datetime object, keep it; if string, convert
+                    if isinstance(charity['created_at'], str):
+                        charity['created_at'] = datetime.fromisoformat(charity['created_at'])
+                except (ValueError, TypeError):
+                    charity['created_at'] = None
             else:
-                charity['created_at'] = None # Default to None if missing
+                charity['created_at'] = None
                 
-            charities.append(charity)
+            charities_list.append(charity)
             
-        return charities
+        return charities_list
+        
     except Exception as e:
         print(f"Error fetching charities: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        # Returning an empty list prevents the frontend from crashing if the DB is empty
+        return []
+
+@api_router.get("/charities/{charity_id}", response_model=CharityResponse)
+async def get_charity(charity_id: str):
+    try:
+        # Check by the string ID field or convert to ObjectId if necessary
+        charity = await db.charities.find_one({"id": charity_id})
+        
+        if not charity:
+            raise HTTPException(status_code=404, detail="Charity not found")
+        
+        # Mapping _id to id if needed
+        if "_id" in charity:
+            charity["id"] = str(charity["_id"])
+
+        # Safe date conversion
+        if 'created_at' in charity and isinstance(charity['created_at'], str):
+            try:
+                charity['created_at'] = datetime.fromisoformat(charity['created_at'])
+            except:
+                charity['created_at'] = None
+        
+        return charity
+    except Exception as e:
+        print(f"Error fetching single charity: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
     
 @api_router.delete("/charities/{charity_id}")
 async def delete_charity(charity_id: str, current_user: dict = Depends(get_current_admin)):
