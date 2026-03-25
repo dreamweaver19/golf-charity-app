@@ -143,7 +143,7 @@ class CharityResponse(BaseModel):
     image_url: Optional[str] = None
     events: List[str] = []
     featured: bool = False
-    created_at: datetime
+    created_at:Optional[datetime] = None
 
 class SubscriptionCreate(BaseModel):
     package_id: str  # \"monthly\" or \"yearly\"
@@ -546,41 +546,43 @@ async def create_charity(charity_data: CharityCreate, current_user: dict = Depen
     charity['created_at'] = datetime.fromisoformat(charity['created_at'])
     return CharityResponse(**charity)
 
+
 @api_router.get("/charities", response_model=List[CharityResponse])
 async def get_charities():
     try:
-        # 1. Fetch from collection and await the list conversion (crucial for Motor)
-        # We fetch all fields including _id to convert it safely
+        # Use plural 'charities' to match your Atlas collection
         cursor = db.charities.find() 
         charities_data = await cursor.to_list(length=100) 
         
         charities_list = []
         
         for charity in charities_data:
-            # 2. Handle MongoDB's _id (convert ObjectId to string)
-            # If your CharityResponse model expects 'id', map it here
-            if "_id" in charity:
-                charity["id"] = str(charity["_id"])
+            # 1. Map MongoDB _id to the 'id' field expected by your model
+            charity["id"] = str(charity["_id"])
             
-            # 3. Safe date handling for 'created_at'
+            # 2. Safety check for the date
+            # We set it to None if it's missing or broken
             if 'created_at' in charity and charity['created_at']:
-                try:
-                    # If it's already a datetime object, keep it; if string, convert
-                    if isinstance(charity['created_at'], str):
+                if isinstance(charity['created_at'], str):
+                    try:
                         charity['created_at'] = datetime.fromisoformat(charity['created_at'])
-                except (ValueError, TypeError):
-                    charity['created_at'] = None
+                    except (ValueError, TypeError):
+                        charity['created_at'] = None
+                # If it's already a datetime object, leave it as is
             else:
                 charity['created_at'] = None
                 
+            # 3. Create the response object
             charities_list.append(charity)
             
         return charities_list
         
     except Exception as e:
-        print(f"Error fetching charities: {e}")
-        # Returning an empty list prevents the frontend from crashing if the DB is empty
+        print(f"ERROR FETCHING CHARITIES: {e}")
+        # Returning an empty list is safer than letting it crash
         return []
+    
+
 
 @api_router.get("/charities/{charity_id}", response_model=CharityResponse)
 async def get_charity(charity_id: str):
