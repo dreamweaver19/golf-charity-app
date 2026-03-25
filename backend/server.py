@@ -550,11 +550,13 @@ async def create_charity(charity_data: CharityCreate, current_user: dict = Depen
 async def get_charities():
     charities = await db.charities.find({}, {"_id": 0}).to_list(100)
     
+    # ✅ This version won't crash if the date is missing
     for charity in charities:
-        charity['created_at'] = datetime.fromisoformat(charity['created_at'])
-    
-    return [CharityResponse(**charity) for charity in charities]
-
+        if 'created_at' in charity and charity['created_at']:
+            try:
+                charity['created_at'] = datetime.fromisoformat(charity['created_at'])
+            except (ValueError, TypeError):
+                pass
 @api_router.get("/charities/{charity_id}", response_model=CharityResponse)
 async def get_charity(charity_id: str):
     charity = await db.charities.find_one({"id": charity_id}, {"_id": 0})
@@ -766,7 +768,7 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
