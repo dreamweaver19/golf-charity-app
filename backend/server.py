@@ -758,10 +758,15 @@ async def health_check():
 app.include_router(api_router)
 
 # CORS middleware
+origins = [
+    "http://localhost:5173",
+    "https://golf-charity-app-green.vercel.app", # Your main domain
+    "https://golf-charity-9zhcomft8-mittalsatyam1920-1250s-projects.vercel.app" # The specific preview link from your error
+]
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
